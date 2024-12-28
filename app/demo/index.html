@@ -51,8 +51,9 @@
     </div>
 
     <script>
-// Define API base URL
-        const API_BASE_URL = "http://127.0.0.1:8000";
+        // Define API base URL
+
+        const API_BASE_URL = "http://localhost:8000";
 
         async function register() {
             const username = document.getElementById("register-username").value;
@@ -61,37 +62,52 @@
                 return;
             }
 
-            // Step 1: Use WebAuthn to generate credentials
-            const publicKeyOptions = {
-                challenge: new Uint8Array(32).fill(0), // Fake challenge for demo; real challenge comes from backend
-                rp: { name: "Example App" },
-                user: {
-                    id: Uint8Array.from(username, c => c.charCodeAt(0)),
-                    name: username,
-                    displayName: username,
-                },
-                pubKeyCredParams: [{ alg: -7, type: "public-key" }], // Use ES256
-            };
+            try {
+                // Step 1: Use WebAuthn to generate credentials
+                const publicKeyOptions = {
+                    challenge: new Uint8Array(32),
+                    rp: {
+                        name: "Example App",
+                        id: window.location.hostname
+                    },
+                    user: {
+                        id: Uint8Array.from(username, c => c.charCodeAt(0)),
+                        name: username,
+                        displayName: username,
+                    },
+                    pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+                    authenticatorSelection: {
+                        residentKey: "preferred",
+                        userVerification: "preferred"
+                    },
+                    timeout: 60000
+                };
 
-            const credential = await navigator.credentials.create({ publicKey: publicKeyOptions });
+                const credential = await navigator.credentials.create({ publicKey: publicKeyOptions });
 
-            // Extract public key and other details
-            const publicKey = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
-            const request = {
-                username,
-                public_key: `-----BEGIN PUBLIC KEY-----\n${publicKey}\n-----END PUBLIC KEY-----`,
-                device_id: "web-authn-device",
-            };
+                const publicKey = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+                const request = {
+                    username,
+                    public_key: `-----BEGIN PUBLIC KEY-----\n${publicKey}\n-----END PUBLIC KEY-----`,
+                    device_id: "web-authn-device"
+                };
 
-            // Step 2: Send public key to backend
-            const response = await fetch(`${API_BASE_URL}/auth/register/`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(request),
-            });
-            const result = await response.json();
-            console.log("Register result:", result);
-            document.getElementById("register-result").textContent = JSON.stringify(result, null, 2);
+                const response = await fetch(`${API_BASE_URL}/auth/register/`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(request),
+                });
+                const result = await response.json();
+                console.log("Register result:", result);
+                document.getElementById("register-result").textContent = JSON.stringify(result, null, 2);
+
+                // TODO: Store public key in secure storage
+                localStorage.setItem(`publicKey_${username}`, publicKey);
+
+            } catch (error) {
+                console.error("Registration error:", error);
+                document.getElementById("register-result").textContent = `Error: ${error.message}`;
+            }
         }
 
         async function login() {
@@ -101,44 +117,58 @@
                 return;
             }
 
-            // Step 1: Get challenge from backend
-            const response = await fetch(`${API_BASE_URL}/auth/login/challenge/`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username }),
-            });
-            const challengeResult = await response.json();
-            console.log("Challenge result:", challengeResult);
+            try {
+                // Step 1: Get challenge from backend
+                const response = await fetch(`${API_BASE_URL}/auth/login/challenge/`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username }),
+                });
+                const challengeResult = await response.json();
+                console.log("Challenge result:", challengeResult);
 
-            // Step 2: Use WebAuthn to sign challenge
-            const publicKeyOptions = {
-                challenge: Uint8Array.from(atob(challengeResult.challenge), c => c.charCodeAt(0)),
-                allowCredentials: [
-                    {
+                // Get stored credential ID
+                const publicKey = localStorage.getItem(`publicKey_${username}`);
+                if (!publicKey) {
+                    throw new Error("No credential found for this username. Please register first.");
+                }
+
+                // Step 2: Use WebAuthn to sign challenge
+                const publicKeyOptions = {
+                    challenge: Uint8Array.from(atob(challengeResult.challenge), c => c.charCodeAt(0)),
+                    rpId: window.location.hostname,
+                    timeout: 60000,
+                    userVerification: "preferred",
+                    allowCredentials: [{
+                        id: Uint8Array.from(atob(publicKey), c => c.charCodeAt(0)),
                         type: "public-key",
-                        id: Uint8Array.from(username, c => c.charCodeAt(0)),
-                    },
-                ],
-            };
+                        transports: ["internal"]
+                    }]
+                };
 
-            const assertion = await navigator.credentials.get({ publicKey: publicKeyOptions });
+                const assertion = await navigator.credentials.get({ publicKey: publicKeyOptions });
 
-            // Step 3: Send signed challenge to backend
-            const signedChallenge = btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature)));
-            const loginRequest = {
-                username,
-                signed_challenge: signedChallenge,
-            };
+                const signedChallenge = btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature)));
+                const loginRequest = {
+                    username,
+                    signed_challenge: signedChallenge
+                };
 
-            const loginResponse = await fetch(`${API_BASE_URL}/auth/login/verify/`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(loginRequest),
-            });
-            const result = await loginResponse.json();
-            console.log("Login result:", result);
-            document.getElementById("login-result").textContent = JSON.stringify(result, null, 2);
+                const loginResponse = await fetch(`${API_BASE_URL}/auth/login/verify/`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(loginRequest),
+                });
+                const result = await loginResponse.json();
+                console.log("Login result:", result);
+                document.getElementById("login-result").textContent = JSON.stringify(result, null, 2);
+
+            } catch (error) {
+                console.error("Login error:", error);
+                document.getElementById("login-result").textContent = `Error: ${error.message}`;
+            }
         }
+
     </script>
 </body>
 </html>
