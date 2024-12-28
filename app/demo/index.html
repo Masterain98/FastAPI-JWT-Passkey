@@ -85,7 +85,9 @@
 
                 const credential = await navigator.credentials.create({ publicKey: publicKeyOptions });
 
-                const publicKey = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+                const publicKey = btoa(String.fromCharCode(...new Uint8Array(credential.response.getPublicKey())));
+                const credentialId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+
                 const request = {
                     username,
                     public_key: `-----BEGIN PUBLIC KEY-----\n${publicKey}\n-----END PUBLIC KEY-----`,
@@ -101,8 +103,7 @@
                 console.log("Register result:", result);
                 document.getElementById("register-result").textContent = JSON.stringify(result, null, 2);
 
-                // TODO: Store public key in secure storage
-                localStorage.setItem(`publicKey_${username}`, publicKey);
+                localStorage.setItem(`credentialId_${username}`, credentialId);
 
             } catch (error) {
                 console.error("Registration error:", error);
@@ -127,9 +128,8 @@
                 const challengeResult = await response.json();
                 console.log("Challenge result:", challengeResult);
 
-                // Get stored credential ID
-                const publicKey = localStorage.getItem(`publicKey_${username}`);
-                if (!publicKey) {
+                const credentialId = localStorage.getItem(`credentialId_${username}`);
+                if (!credentialId) {
                     throw new Error("No credential found for this username. Please register first.");
                 }
 
@@ -140,7 +140,7 @@
                     timeout: 60000,
                     userVerification: "preferred",
                     allowCredentials: [{
-                        id: Uint8Array.from(atob(publicKey), c => c.charCodeAt(0)),
+                        id: Uint8Array.from(atob(credentialId), c => c.charCodeAt(0)),
                         type: "public-key",
                         transports: ["internal"]
                     }]
