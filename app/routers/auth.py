@@ -25,6 +25,7 @@ async def get_challenge(request: ChallengeRequest):
     if username not in users_db:
         raise HTTPException(status_code=404, detail="User not found.")
     challenge = generate_challenge()
+    print(f"Sending challenge to user: {username}; Challenge: {challenge}")
     challenges_db[username] = challenge
     return ChallengeResponse(username=username, challenge=challenge)
 

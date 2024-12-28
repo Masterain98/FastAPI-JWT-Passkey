@@ -134,8 +134,9 @@
                 }
 
                 // Step 2: Use WebAuthn to sign challenge
+                console.log("challenge Type:", typeof challengeResult.challenge);
                 const publicKeyOptions = {
-                    challenge: Uint8Array.from(atob(challengeResult.challenge), c => c.charCodeAt(0)),
+                    challenge: Uint8Array.from(challengeResult.challenge, c => c.charCodeAt(0)),
                     rpId: window.location.hostname,
                     timeout: 60000,
                     userVerification: "preferred",
@@ -149,6 +150,7 @@
                 const assertion = await navigator.credentials.get({ publicKey: publicKeyOptions });
 
                 const signedChallenge = btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature)));
+
                 const loginRequest = {
                     username,
                     signed_challenge: signedChallenge
